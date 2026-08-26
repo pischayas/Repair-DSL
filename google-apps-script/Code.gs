@@ -19,7 +19,7 @@ const DRIVE_FOLDER_NAME = 'DonSala-RepairPhotos';
 
 // ---- แก้อีเมลผู้รับผิดชอบแต่ละฝ่ายตรงนี้ ----
 const DEPT_EMAILS = {
-  'ฝ่ายอาคารสถานที่': 'building@donsala.example.ac.th',
+  'ฝ่ายอาคารสถานที่': 'pischayas@gmail.com',
   'ฝ่ายไฟฟ้า': 'electric@donsala.example.ac.th',
   'ฝ่ายคอมพิวเตอร์/IT': 'it@donsala.example.ac.th',
   'ฝ่ายสุขาภิบาล/ประปา': 'plumbing@donsala.example.ac.th',
