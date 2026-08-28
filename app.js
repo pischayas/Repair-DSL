@@ -77,6 +77,19 @@ async function apiList(){
   return data.success ? data.reports : [];
 }
 
+let CACHED_NAMES = null;
+async function loadNames(){
+  if(CACHED_NAMES) return CACHED_NAMES;
+  try{
+    const res = await fetch(APPS_SCRIPT_URL + '?action=names');
+    const data = await res.json();
+    CACHED_NAMES = data.success ? data.names : [];
+  }catch(e){
+    CACHED_NAMES = [];
+  }
+  return CACHED_NAMES;
+}
+
 // ---------- Report form view ----------
 function renderReportView(){
   const el = document.getElementById('view-report');
@@ -87,8 +100,11 @@ function renderReportView(){
         <span class="tno">${new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>
       </div>
       <div class="ticket-body">
-        <label>ชื่อผู้แจ้ง</label>
-        <input type="text" id="f-name" placeholder="เช่น ครูสมชาย / นักเรียนชั้น ม.3/1">
+        <label>ชื่อผู้แจ้ง <span class="req">*</span></label>
+        <div class="autocomplete" id="nameAutocomplete">
+          <input type="text" id="f-name" placeholder="พิมพ์เพื่อค้นหาชื่อ..." autocomplete="off">
+          <div class="autocomplete-list" id="nameList"></div>
+        </div>
 
         <div class="row2">
           <div>
@@ -136,6 +152,67 @@ function renderReportView(){
   document.getElementById('photoDrop').onclick = ()=>document.getElementById('f-photo').click();
   document.getElementById('f-photo').onchange = handlePhotoSelect;
   document.getElementById('submitBtn').onclick = submitReport;
+  setupNameAutocomplete();
+}
+
+let selectedName = ''; // ค่าชื่อที่ "ยืนยัน" แล้วว่าตรงกับรายชื่อในชีตเท่านั้น ใช้ค่านี้ตอนส่งฟอร์ม ไม่ใช้ค่าที่พิมพ์ดิบๆ
+
+async function setupNameAutocomplete(){
+  selectedName = '';
+  const input = document.getElementById('f-name');
+  const list = document.getElementById('nameList');
+  input.placeholder = 'กำลังโหลดรายชื่อ...';
+  input.disabled = true;
+
+  const names = await loadNames();
+  input.disabled = false;
+  input.placeholder = 'พิมพ์เพื่อค้นหาชื่อ...';
+  if(!input.isConnected) return; // ผู้ใช้อาจสลับแท็บไปแล้วก่อนโหลดเสร็จ
+
+  function renderList(query){
+    const q = query.trim().toLowerCase();
+    const matches = q === ''
+      ? names.slice(0, 8)
+      : names.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+
+    if(names.length === 0){
+      list.innerHTML = `<div class="autocomplete-empty">ยังไม่มีรายชื่อ — โปรดเพิ่มในชีต "รายชื่อ"</div>`;
+    } else if(matches.length === 0){
+      list.innerHTML = `<div class="autocomplete-empty">ไม่พบชื่อที่ตรงกัน</div>`;
+    } else {
+      list.innerHTML = matches.map(n => `<div class="autocomplete-item" data-name="${n}">${n}</div>`).join('');
+      list.querySelectorAll('.autocomplete-item').forEach(item=>{
+        // ใช้ mousedown แทน click เพื่อให้ทำงานก่อน blur ของ input (กันรายการหายก่อนกดติด)
+        item.addEventListener('mousedown', (ev)=>{
+          ev.preventDefault();
+          const name = item.dataset.name;
+          input.value = name;
+          selectedName = name;
+          input.classList.remove('invalid');
+          list.classList.remove('show');
+        });
+      });
+    }
+    list.classList.add('show');
+  }
+
+  input.oninput = ()=>{
+    selectedName = ''; // พิมพ์เปลี่ยนแล้ว ต้องเลือกใหม่จากลิสต์เท่านั้นถึงจะยืนยัน
+    input.classList.remove('invalid');
+    renderList(input.value);
+  };
+  input.onfocus = ()=> renderList(input.value);
+  input.onblur = ()=>{
+    // หน่วงเล็กน้อยให้ mousedown ของรายการทำงานก่อนที่ list จะถูกซ่อน
+    setTimeout(()=>{
+      list.classList.remove('show');
+      if(input.value && !selectedName){
+        // พิมพ์ไว้แต่ไม่ได้เลือกจากลิสต์ → ไม่ยอมรับ เคลียร์ทิ้งเพื่อบังคับให้เลือกจากรายชื่อเท่านั้น
+        input.value = '';
+        input.classList.add('invalid');
+      }
+    }, 150);
+  };
 }
 
 function handlePhotoSelect(e){
@@ -195,7 +272,7 @@ function renderSuccessView(id){
 async function submitReport(){
   if(!checkConfig()) return;
 
-  const name = document.getElementById('f-name').value.trim();
+  const name = selectedName; // ใช้ค่าที่ยืนยันจากลิสต์เท่านั้น ไม่ใช้ข้อความดิบในช่อง
   const location = document.getElementById('f-location').value;
   const locdetail = document.getElementById('f-locdetail').value.trim();
   const category = document.getElementById('f-category').value;
@@ -203,7 +280,14 @@ async function submitReport(){
   const urgency = document.querySelector('input[name=lv]:checked').value;
   const dept = document.getElementById('f-dept').value;
 
-  if(!name || !location || !category || !detail || !dept){
+  if(!name){
+    toast('กรุณาเลือกชื่อผู้แจ้งจากรายชื่อที่ค้นหา');
+    document.getElementById('f-name').classList.add('invalid');
+    document.getElementById('f-name').focus();
+    return;
+  }
+
+  if(!location || !category || !detail || !dept){
     toast('กรุณากรอกข้อมูลให้ครบก่อนส่ง');
     return;
   }
