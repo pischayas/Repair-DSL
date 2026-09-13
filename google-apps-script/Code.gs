@@ -15,11 +15,17 @@
  */
 
 const SHEET_NAME = 'Reports';
+const NAMES_SHEET_NAME = 'รายชื่อ';
 const DRIVE_FOLDER_NAME = 'DonSala-RepairPhotos';
+
+// ต้องตรงกับ GOOGLE_CLIENT_ID ในไฟล์ config.js ฝั่งเว็บ (ดูวิธีสร้างใน README.md หัวข้อ "ระบบล็อกอิน")
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE';
+// โดเมนอีเมลที่อนุญาตให้แก้ไขสถานะงานได้
+const ALLOWED_EMAIL_DOMAIN = 'dsl.ac.th';
 
 // ---- แก้อีเมลผู้รับผิดชอบแต่ละฝ่ายตรงนี้ ----
 const DEPT_EMAILS = {
-  'ฝ่ายอาคารสถานที่': 'pischayas@gmail.com',
+  'ฝ่ายอาคารสถานที่': 'building@donsala.example.ac.th',
   'ฝ่ายไฟฟ้า': 'electric@donsala.example.ac.th',
   'ฝ่ายคอมพิวเตอร์/IT': 'it@donsala.example.ac.th',
   'ฝ่ายสุขาภิบาล/ประปา': 'plumbing@donsala.example.ac.th',
@@ -36,6 +42,9 @@ function doGet(e) {
   const action = e.parameter.action;
   if (action === 'list') {
     return jsonResponse({ success: true, reports: getAllReports() });
+  }
+  if (action === 'names') {
+    return jsonResponse({ success: true, names: getNamesList() });
   }
   return jsonResponse({ success: false, error: 'unknown action' });
 }
@@ -84,6 +93,11 @@ function createReport(data) {
 }
 
 function updateStatus(data) {
+  const auth = verifyAuth(data.idToken);
+  if (!auth.ok) {
+    return jsonResponse({ success: false, error: auth.error });
+  }
+
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -103,6 +117,31 @@ function updateStatus(data) {
     return jsonResponse({ success: false, error: 'ไม่พบรายการ ID นี้' });
   } finally {
     lock.releaseLock();
+  }
+}
+
+// ตรวจสอบ Google ID token ว่ายังไม่หมดอายุ ออกให้แอปนี้จริง และเป็นอีเมลโดเมนที่อนุญาต
+function verifyAuth(idToken) {
+  if (!idToken) return { ok: false, error: 'กรุณาเข้าสู่ระบบก่อนแก้ไขสถานะ' };
+  try {
+    const res = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+    const info = JSON.parse(res.getContentText());
+    if (info.error) return { ok: false, error: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' };
+    if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR') === -1 && info.aud !== GOOGLE_CLIENT_ID) {
+      return { ok: false, error: 'โทเคนไม่ตรงกับระบบนี้' };
+    }
+    if (!info.email || info.email_verified !== 'true') {
+      return { ok: false, error: 'อีเมลยังไม่ได้ยืนยันตัวตน' };
+    }
+    if (!info.email.toLowerCase().endsWith('@' + ALLOWED_EMAIL_DOMAIN.toLowerCase())) {
+      return { ok: false, error: 'อนุญาตเฉพาะอีเมล @' + ALLOWED_EMAIL_DOMAIN + ' เท่านั้น' };
+    }
+    return { ok: true, email: info.email };
+  } catch (e) {
+    return { ok: false, error: 'ตรวจสอบสิทธิ์ไม่สำเร็จ: ' + e.message };
   }
 }
 
@@ -126,6 +165,31 @@ function getAllReports() {
 }
 
 // ================= Helpers =================
+
+function getNamesSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(NAMES_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(NAMES_SHEET_NAME);
+    sheet.appendRow(['ชื่อ-นามสกุล']);
+    sheet.setFrozenRows(1);
+    // แถวตัวอย่าง — ลบออกแล้วพิมพ์รายชื่อจริงแทนได้เลย
+    sheet.appendRow(['ครูสมชาย ใจดี']);
+    sheet.appendRow(['เด็กชายสมหวัง ตั้งใจเรียน ม.1/1']);
+  }
+  return sheet;
+}
+
+function getNamesList() {
+  const sheet = getNamesSheet();
+  const values = sheet.getDataRange().getValues();
+  const names = [];
+  for (let i = 1; i < values.length; i++) {
+    const name = values[i][0];
+    if (name && String(name).trim()) names.push(String(name).trim());
+  }
+  return names;
+}
 
 function getSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
