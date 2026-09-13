@@ -19,7 +19,7 @@ const NAMES_SHEET_NAME = 'รายชื่อ';
 const DRIVE_FOLDER_NAME = 'DonSala-RepairPhotos';
 
 // ต้องตรงกับ GOOGLE_CLIENT_ID ในไฟล์ config.js ฝั่งเว็บ (ดูวิธีสร้างใน README.md หัวข้อ "ระบบล็อกอิน")
-const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE';
+const GOOGLE_CLIENT_ID = '868838247565-4nu28s7lloif7c6cenpg50l46ifjqs9i.apps.googleusercontent.com';
 // โดเมนอีเมลที่อนุญาตให้แก้ไขสถานะงานได้
 const ALLOWED_EMAIL_DOMAIN = 'dsl.ac.th';
 
