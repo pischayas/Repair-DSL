@@ -19,6 +19,9 @@ const STATUSES = ["รอดำเนินการ","กำลังดำเ�
 
 let currentPhotoData = null;
 let adminFilter = "ทั้งหมด";
+let authToken = null; // Google ID token ของผู้ที่เข้าสู่ระบบ (เก็บในหน่วยความจำ หายเมื่อรีเฟรชหน้า)
+let authEmail = null;
+let googleAuthInitialized = false;
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -66,7 +69,7 @@ async function apiUpdateStatus(id, status){
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: 'updateStatus', id, status })
+    body: JSON.stringify({ action: 'updateStatus', id, status, idToken: authToken })
   });
   return res.json();
 }
@@ -307,6 +310,50 @@ function renderSuccessView(id){
   document.getElementById('btnTrack').onclick = ()=>document.getElementById('tab-admin').click();
 }
 
+async function checkDuplicates(location, locdetail, category){
+  try{
+    const reports = await apiList();
+    return reports.filter(r =>
+      r.status !== 'เสร็จสิ้น' &&
+      r.location === location &&
+      (r.locDetail || '').trim().toLowerCase() === (locdetail || '').trim().toLowerCase() &&
+      r.category === category
+    );
+  }catch(e){
+    return []; // เช็คไม่ได้ก็ปล่อยผ่าน ไม่ให้บล็อกการแจ้งซ่อมจริง
+  }
+}
+
+function confirmDuplicateDialog(dupes){
+  return new Promise((resolve)=>{
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = `
+      <div class="modal">
+        <div class="modal-handle"></div>
+        <h2 style="font-family:'Prompt',sans-serif;margin:8px 0;">⚠️ อาจมีการแจ้งซ้ำ</h2>
+        <p style="color:var(--slate);font-size:14.5px;margin:0 0 14px;">พบรายการที่สถานที่และหมวดหมู่เดียวกัน ${dupes.length} รายการที่ยังไม่เสร็จสิ้น ต้องการแจ้งซ้ำอีกหรือไม่?</p>
+        ${dupes.slice(0,3).map(d => `
+          <div class="ticket" style="margin-bottom:10px;">
+            <div class="ticket-body" style="padding:12px 16px;">
+              <div class="li-info">
+                <div class="det" style="white-space:normal;">${d.detail}</div>
+                <div class="li-meta">${d.status} · ${new Date(d.timestamp).toLocaleDateString('th-TH')} · แจ้งโดย ${d.name}</div>
+              </div>
+            </div>
+          </div>`).join('')}
+        <div class="status-btns" style="margin-top:10px;">
+          <button id="dupCancel">ยกเลิก ไม่ส่งซ้ำ</button>
+          <button id="dupConfirm" class="current">ยืนยันแจ้งซ้ำต่อ</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bg);
+    document.getElementById('dupCancel').onclick = ()=>{ bg.remove(); resolve(false); };
+    document.getElementById('dupConfirm').onclick = ()=>{ bg.remove(); resolve(true); };
+    bg.onclick = (e)=>{ if(e.target===bg){ bg.remove(); resolve(false); } };
+  });
+}
+
 async function submitReport(){
   if(!checkConfig()) return;
 
@@ -337,6 +384,12 @@ async function submitReport(){
     drop.scrollIntoView({ behavior:'smooth', block:'center' });
     setTimeout(()=>drop.classList.remove('error'), 500);
     return;
+  }
+
+  const dupes = await checkDuplicates(location, locdetail, category);
+  if(dupes.length > 0){
+    const proceed = await confirmDuplicateDialog(dupes);
+    if(!proceed) return; // ผู้ใช้เลือกยกเลิก ไม่ส่งซ้ำ
   }
 
   const btn = document.getElementById('submitBtn');
@@ -375,6 +428,72 @@ async function refreshPendingDot(){
   else{ dot.style.display='none'; }
 }
 
+function decodeJwtPayload(token){
+  try{
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    return JSON.parse(jsonPayload);
+  }catch(e){ return null; }
+}
+
+function ensureGoogleAuthInitialized(){
+  if(googleAuthInitialized) return;
+  if(typeof google === 'undefined' || !google.accounts || !GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('PASTE_YOUR') !== -1) return;
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleCredentialResponse
+  });
+  googleAuthInitialized = true;
+}
+
+function handleCredentialResponse(response){
+  const payload = decodeJwtPayload(response.credential);
+  if(!payload || !payload.email || !payload.email.endsWith('@' + ALLOWED_EMAIL_DOMAIN)){
+    toast('อนุญาตเฉพาะอีเมล @' + ALLOWED_EMAIL_DOMAIN + ' เท่านั้น');
+    return;
+  }
+  authToken = response.credential;
+  authEmail = payload.email;
+  toast('เข้าสู่ระบบสำเร็จ: ' + authEmail);
+  renderAdminView();
+}
+
+function logout(){
+  authToken = null;
+  authEmail = null;
+  renderAdminView();
+}
+
+function buildAuthBarHtml(){
+  if(authToken){
+    return `
+      <div id="authBar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding:11px 16px;background:#EAF6EF;border:1.5px solid var(--green);border-radius:12px;">
+        <span style="font-size:12.5px;color:var(--green);font-weight:700;">✅ ${authEmail}</span>
+        <button id="logoutBtn" style="background:none;border:none;color:var(--slate);font-size:12.5px;text-decoration:underline;cursor:pointer;">ออกจากระบบ</button>
+      </div>`;
+  }
+  return `
+    <div id="authBar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;padding:11px 16px;background:var(--paper-light);border:1.5px solid var(--line);border-radius:12px;">
+      <span style="font-size:12.5px;color:var(--slate);">🔒 เข้าสู่ระบบด้วยอีเมล @${ALLOWED_EMAIL_DOMAIN} เพื่อแก้ไขสถานะ</span>
+      <div id="googleSignInBtn"></div>
+    </div>`;
+}
+
+function wireAuthBar(){
+  if(authToken){
+    document.getElementById('logoutBtn').onclick = logout;
+    return;
+  }
+  ensureGoogleAuthInitialized();
+  const btnEl = document.getElementById('googleSignInBtn');
+  if(googleAuthInitialized && btnEl){
+    google.accounts.id.renderButton(btnEl, { theme:'outline', size:'medium', text:'signin_with' });
+  } else if(btnEl){
+    btnEl.innerHTML = '<span style="font-size:11.5px;color:var(--rust);">ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID ใน config.js</span>';
+  }
+}
+
 async function renderAdminView(){
   if(!checkConfig()) return;
   const el = document.getElementById('view-admin');
@@ -390,6 +509,7 @@ async function renderAdminView(){
   const filtered = adminFilter==='ทั้งหมด' ? reports : reports.filter(r=>r.status===adminFilter);
 
   el.innerHTML = `
+    ${buildAuthBarHtml()}
     <div class="stats">
       <div class="stat"><div class="stat-icon" style="background:#FBDCD5">⏳</div><div class="n" style="color:var(--rust)">${counts['รอดำเนินการ']}</div><div class="l">รอดำเนินการ</div></div>
       <div class="stat"><div class="stat-icon" style="background:#FCEBB8">🛠️</div><div class="n" style="color:var(--amber-deep)">${counts['กำลังดำเนินการ']}</div><div class="l">กำลังดำเนินการ</div></div>
@@ -400,6 +520,8 @@ async function renderAdminView(){
     </div>
     <div id="ticketList"></div>
   `;
+
+  wireAuthBar();
 
   document.getElementById('filterBar').querySelectorAll('button').forEach(b=>{
     b.onclick = ()=>{ adminFilter = b.dataset.f; renderAdminView(); };
@@ -449,6 +571,7 @@ function openDetail(r){
       <p><b>รายละเอียด:</b> ${r.detail}</p>
       <p><b>ผู้แจ้ง:</b> ${r.name} &nbsp;·&nbsp; ${new Date(r.timestamp).toLocaleString('th-TH')}</p>
       <label style="margin-top:10px;">อัปเดตสถานะ</label>
+      ${authToken ? '' : `<p style="font-size:12.5px;color:var(--rust);margin:4px 0;">🔒 เข้าสู่ระบบด้วยอีเมล @${ALLOWED_EMAIL_DOMAIN} ที่แถบด้านบนก่อน จึงจะแก้ไขสถานะได้</p>`}
       <div class="status-btns" id="statusBtns">
         ${STATUSES.map(s=>`<button data-s="${s}" class="${s===r.status?'current':''}">${s}</button>`).join('')}
       </div>
@@ -459,6 +582,10 @@ function openDetail(r){
   document.getElementById('closeModal').onclick = ()=>bg.remove();
   bg.querySelectorAll('#statusBtns button').forEach(b=>{
     b.onclick = async ()=>{
+      if(!authToken){
+        toast('กรุณาเข้าสู่ระบบด้วยอีเมล @' + ALLOWED_EMAIL_DOMAIN + ' ก่อนแก้ไขสถานะ');
+        return;
+      }
       const newStatus = b.dataset.s;
       try{
         const result = await apiUpdateStatus(r.id, newStatus);
