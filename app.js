@@ -151,6 +151,11 @@ function renderReportView(){
           <input type="file" id="f-photo" accept="image/*" capture="environment">
         </div>
 
+       <label class="attest-row" for="f-attest">
+          <input type="checkbox" id="f-attest">
+          <span>ข้าพเจ้ายืนยันว่าข้อมูลที่แจ้งเป็นความจริง หากแจ้งเท็จหรือแกล้งแจ้งเล่น อาจมีผลทางวินัยตามระเบียบโรงเรียน</span>
+        </label>
+
         <button class="submit-btn" id="submitBtn">📌 ส่งแจ้งซ่อม</button>
       </div>
     </div>
@@ -377,7 +382,7 @@ async function submitReport(){
     return;
   }
 
-  if(!currentPhotoData){
+   if(!currentPhotoData){
     toast('กรุณาแนบรูปภาพสิ่งของที่ชำรุดก่อนส่ง');
     const drop = document.getElementById('photoDrop');
     drop.classList.add('error');
@@ -386,6 +391,13 @@ async function submitReport(){
     return;
   }
 
+  if(!document.getElementById('f-attest').checked){
+    toast('กรุณายืนยันว่าข้อมูลที่แจ้งเป็นความจริง');
+    document.getElementById('f-attest').closest('.attest-row').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
+
+  const dupes = await checkDuplicates(location, locdetail, category);
   const dupes = await checkDuplicates(location, locdetail, category);
   if(dupes.length > 0){
     const proceed = await confirmDuplicateDialog(dupes);
