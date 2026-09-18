@@ -151,7 +151,7 @@ function renderReportView(){
           <input type="file" id="f-photo" accept="image/*" capture="environment">
         </div>
 
-       <label class="attest-row" for="f-attest">
+        <label class="attest-row" for="f-attest">
           <input type="checkbox" id="f-attest">
           <span>ข้าพเจ้ายืนยันว่าข้อมูลที่แจ้งเป็นความจริง หากแจ้งเท็จหรือแกล้งแจ้งเล่น อาจมีผลทางวินัยตามระเบียบโรงเรียน</span>
         </label>
@@ -232,7 +232,6 @@ async function setupNameAutocomplete(){
           <span>${highlightMatch(n, query.trim())}</span>
         </div>`).join('');
       list.querySelectorAll('.autocomplete-item').forEach(item=>{
-        // ใช้ mousedown แทน click เพื่อให้ทำงานก่อน blur ของ input (กันรายการหายก่อนกดติด)
         item.addEventListener('mousedown', (ev)=>{
           ev.preventDefault();
           confirmName(item.dataset.name);
@@ -248,11 +247,9 @@ async function setupNameAutocomplete(){
   };
   input.onfocus = ()=>{ if(!wrap.classList.contains('confirmed')) renderList(input.value); };
   input.onblur = ()=>{
-    // หน่วงเล็กน้อยให้ mousedown ของรายการทำงานก่อนที่ list จะถูกซ่อน
     setTimeout(()=>{
       list.classList.remove('show');
       if(input.value && !selectedName){
-        // พิมพ์ไว้แต่ไม่ได้เลือกจากลิสต์ → ไม่ยอมรับ เคลียร์ทิ้งเพื่อบังคับให้เลือกจากรายชื่อเท่านั้น
         input.value = '';
         input.classList.add('invalid');
       }
@@ -325,7 +322,7 @@ async function checkDuplicates(location, locdetail, category){
       r.category === category
     );
   }catch(e){
-    return []; // เช็คไม่ได้ก็ปล่อยผ่าน ไม่ให้บล็อกการแจ้งซ่อมจริง
+    return [];
   }
 }
 
@@ -362,7 +359,7 @@ function confirmDuplicateDialog(dupes){
 async function submitReport(){
   if(!checkConfig()) return;
 
-  const name = selectedName; // ใช้ค่าที่ยืนยันจากลิสต์เท่านั้น ไม่ใช้ข้อความดิบในช่อง
+  const name = selectedName;
   const location = document.getElementById('f-location').value;
   const locdetail = document.getElementById('f-locdetail').value.trim();
   const category = document.getElementById('f-category').value;
@@ -382,7 +379,7 @@ async function submitReport(){
     return;
   }
 
-   if(!currentPhotoData){
+  if(!currentPhotoData){
     toast('กรุณาแนบรูปภาพสิ่งของที่ชำรุดก่อนส่ง');
     const drop = document.getElementById('photoDrop');
     drop.classList.add('error');
@@ -398,10 +395,9 @@ async function submitReport(){
   }
 
   const dupes = await checkDuplicates(location, locdetail, category);
-  const dupes = await checkDuplicates(location, locdetail, category);
   if(dupes.length > 0){
     const proceed = await confirmDuplicateDialog(dupes);
-    if(!proceed) return; // ผู้ใช้เลือกยกเลิก ไม่ส่งซ้ำ
+    if(!proceed) return;
   }
 
   const btn = document.getElementById('submitBtn');
