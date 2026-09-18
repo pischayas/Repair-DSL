@@ -161,6 +161,12 @@ input#lv-ต่ำ:checked + label{background:#DCEEE4;color:var(--green);border-
   25%{transform:translateX(-5px);}
   75%{transform:translateX(5px);}
 }
+.attest-row{
+  display:flex;gap:10px;align-items:flex-start;margin-top:18px;
+  padding:12px 14px;background:var(--paper);border-radius:10px;cursor:pointer;
+}
+.attest-row input[type=checkbox]{width:18px;height:18px;margin-top:2px;flex-shrink:0;accent-color:var(--amber-deep);cursor:pointer;}
+.attest-row span{font-size:12.5px;color:var(--slate);line-height:1.5;}
 
 .submit-btn{
   width:100%;margin-top:22px;padding:17px;border:none;border-radius:14px;
